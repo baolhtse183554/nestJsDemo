@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Address } from './entities/address.entity';
@@ -16,6 +16,18 @@ export class AddressesService {
   ) {}
 
   async create(createAddressDto: CreateAddressDto) {
+    const existingAddress = await this.addressesRepository.findOne({
+      where: {
+        street: createAddressDto.street,
+        city: createAddressDto.city,
+        userId: createAddressDto.userId
+      }
+    });
+
+    if (existingAddress) {
+      throw new ConflictException('Address already exists for this user.');
+    }
+
     const user = await this.usersRepository.findOne({
       where: { id: createAddressDto.userId }
     });
@@ -33,19 +45,18 @@ export class AddressesService {
   }
 
   async findAll() {
-    const addresses = await this.addressesRepository.find({
-      relations: ['user'],
-      select: {
-        id: true,
-        street: true,
-        city: true,
-        userId: true,
-        user: {
-          id: true,
-          name: true
-        }
-      }
-    });
+    const addresses = await this.addressesRepository
+      .createQueryBuilder('address')
+      .leftJoinAndSelect('address.user', 'user')
+      .select([
+        'address.id',
+        'address.street',
+        'address.city',
+        'address.userId',
+        'user.id',
+        'user.name'
+      ])
+      .getMany();
 
     return addresses.map(address => ({
       id: address.id,
@@ -58,20 +69,19 @@ export class AddressesService {
   }
 
   async findOne(id: number) {
-    const address = await this.addressesRepository.findOne({
-      where: { id },
-      relations: ['user'],
-      select: {
-        id: true,
-        street: true,
-        city: true,
-        userId: true,
-        user: {
-          id: true,
-          name: true
-        }
-      }
-    });
+    const address = await this.addressesRepository
+      .createQueryBuilder('address')
+      .leftJoinAndSelect('address.user', 'user')
+      .select([
+        'address.id',
+        'address.street',
+        'address.city',
+        'address.userId',
+        'user.id',
+        'user.name'
+      ])
+      .where('address.id = :id', { id })
+      .getOne();
 
     if (!address) {
       throw new NotFoundException(`Address #${id} not found`);
@@ -100,10 +110,11 @@ export class AddressesService {
   }
 
   async update(id: number, updateAddressDto: UpdateAddressDto) {
-    const address = await this.addressesRepository.findOne({
-      where: { id },
-      relations: ['user']
-    });
+    const address = await this.addressesRepository
+      .createQueryBuilder('address')
+      .leftJoinAndSelect('address.user', 'user')
+      .where('address.id = :id', { id })
+      .getOne();
 
     if (!address) {
       throw new NotFoundException(`Address #${id} not found`);

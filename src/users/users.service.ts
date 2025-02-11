@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
@@ -12,7 +12,16 @@ export class UsersService {
     private usersRepository: Repository<User>,
   ) {}
 
-  create(createUserDto: CreateUserDto) {
+  async create(createUserDto: CreateUserDto) {
+    // Check if the email already exists
+    const existingUser = await this.usersRepository.findOne({
+      where: { email: createUserDto.email },
+    });
+
+    if (existingUser) {
+      throw new ConflictException('Email already exists');
+    }
+
     const user = this.usersRepository.create(createUserDto);
     return this.usersRepository.save(user);
   }
@@ -20,6 +29,16 @@ export class UsersService {
   async findAll() {
     const users = await this.usersRepository.find({
       relations: ['addresses'],
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        addresses: {
+          id: true,
+          street: true,
+          city: true
+        }
+      }
     });
 
     return users.map(user => ({
@@ -28,7 +47,7 @@ export class UsersService {
       email: user.email,
       addresses: user.addresses.map(address => ({
         id: address.id,
-        address: `${address.street}, ${address.city}`,
+        address: `${address.street}, ${address.city}`
       })),
     }));
   }
